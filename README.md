@@ -15,8 +15,8 @@ A comprehensive Python package for autonomous mobile robot (AMR) path planning w
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
-cd amr_path_planner
+git clone https://github.com/aksh-ay06/Autonomous-Mobile-Robot-Path-Planner
+cd Autonomous-Mobile-Robot-Path-Planner
 ```
 
 2. Install dependencies:
