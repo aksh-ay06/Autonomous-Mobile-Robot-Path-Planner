@@ -50,6 +50,7 @@ class Simulator:
         self.step_delay = step_delay
         self.max_steps = max_steps
         self.current_step = 0
+        self.running = True  # <-- Add this line
         
         # Determine simulation mode
         self.is_multi_robot = multi_robot_coordinator is not None
@@ -79,7 +80,7 @@ class Simulator:
                 )
                 self.animation.save(gif_filename, writer='pillow', fps=10)
                 print(f"Animation saved as {gif_filename}")
-                        else:
+            else:
                 self.animation = animation.FuncAnimation(
                     self.fig, self._animate_step, frames=self.max_steps,
                     interval=self.step_delay * 1000, repeat=False, blit=False
@@ -100,11 +101,15 @@ class Simulator:
     def _animate_step(self, frame):
         """Animation function for matplotlib."""
         if self._simulation_step():
+            self.running = False
+            if self.animation:
+                self.animation.event_source.stop()
             return []  # Stop animation if goal reached
         
         self._render()
         return []
-      def _simulation_step(self) -> bool:
+    
+    def _simulation_step(self) -> bool:
         """
         Execute one simulation step.
         
@@ -126,6 +131,7 @@ class Simulator:
                 if not hasattr(self, '_goal_reached_printed'):
                     print(f"All robots reached their goals at step {self.current_step}!")
                     self._goal_reached_printed = True
+                self.running = False
                 return True
         else:
             # Single robot mode
@@ -135,12 +141,14 @@ class Simulator:
                 if not hasattr(self, '_goal_reached_printed'):
                     print(f"Goal reached at step {self.current_step}!")
                     self._goal_reached_printed = True
+                self.running = False
                 return True
         
         self.current_step += 1
         
         if self.current_step >= self.max_steps:
             print(f"Maximum steps ({self.max_steps}) reached!")
+            self.running = False
             return True
         
         return False
@@ -217,6 +225,7 @@ class Simulator:
     def reset(self):
         """Reset simulation to initial state."""
         self.current_step = 0
+        self.running = True  # <-- Add this line
         # Note: You may want to reset agent and obstacle positions here
     
     def get_statistics(self) -> dict:

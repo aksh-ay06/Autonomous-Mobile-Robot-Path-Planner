@@ -29,7 +29,7 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-## Quick Start
+## ⚡️ Quick Start (Updated)
 
 ```python
 from amr_path_planner import GridMap, PathPlanner, RobotAgent, DynamicObstacleMgr, Simulator
@@ -42,8 +42,6 @@ planner = PathPlanner('astar', grid=grid)
 
 # Create robot agent
 robot = RobotAgent((1, 1), planner)
-
-# Set goal and plan path
 robot.plan_to((18, 13))
 
 # Create dynamic obstacle manager
@@ -51,8 +49,8 @@ obstacle_mgr = DynamicObstacleMgr(grid)
 obstacle_mgr.add_obstacle(8, 6)
 obstacle_mgr.add_obstacle(12, 10)
 
-# Create and run simulator
-simulator = Simulator(grid, robot, obstacle_mgr)
+# Create and run simulator (use keyword arguments for clarity)
+simulator = Simulator(grid=grid, agent=robot, obstacle_mgr=obstacle_mgr)
 simulator.run(visualize=True)
 ```
 
@@ -174,52 +172,86 @@ simulator = Simulator(grid, robot, obstacle_mgr, step_delay=0.05)
 simulator = Simulator(grid, robot, obstacle_mgr, step_delay=0.5, max_steps=1000)
 ```
 
-## Extension Ideas
+## Advanced Features
 
-1. **Additional Algorithms**: Implement RRT, PRM, or other planning algorithms
-2. **Multi-Robot Support**: Extend for multiple robots with coordination
-3. **3D Planning**: Extend to 3D grid maps
-4. **Real Robot Integration**: Connect to actual robot hardware
-5. **Machine Learning**: Add learned heuristics or neural network planners
-6. **Path Smoothing**: Add path optimization and smoothing
-7. **Different Movement Models**: Support 8-connected grids or continuous movement
+### Sampling-Based Algorithms
 
-## Contributing
+- **RRT (Rapidly-exploring Random Tree)**: Fast, sampling-based planner for complex environments
+- **RRT\***: Optimized RRT with path cost minimization
+- **PRM (Probabilistic Roadmap)**: Multi-query roadmap planner for static environments
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Run the test suite
-6. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Dependencies
-
-- `matplotlib`: Visualization and animation
-- `numpy`: Numerical computations (indirect dependency)
-- `pytest`: Testing framework
-- `networkx`: Graph algorithms (optional, for future extensions)
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Import Error**: Make sure the package is installed with `pip install -e .`
-2. **Visualization Issues**: Ensure matplotlib backend supports animation
-3. **Performance Issues**: Reduce grid size or increase step_delay for large simulations
-4. **Path Not Found**: Check that start and goal positions are valid and reachable
-
-### Debug Mode
-
-Enable debug output:
+Example usage:
 ```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
+from amr_path_planner.advanced_algorithms import rrt, rrt_star, prm
+
+# Plan with RRT
+path = rrt(start=(0, 0), goal=(19, 14), grid=grid, max_iterations=1000, step_size=1.0)
+
+# Plan with RRT*
+path = rrt_star(start=(0, 0), goal=(19, 14), grid=grid, max_iterations=1000, step_size=1.0, search_radius=2.0)
+
+# Plan with PRM
+path = prm(start=(0, 0), goal=(19, 14), grid=grid, num_samples=200, connection_radius=3.0)
 ```
+
+### Path Smoothing
+
+- **Shortcut Smoothing**: Removes unnecessary waypoints
+- **Bezier Smoothing**: Smooths path using Bezier curves
+- **Spline Smoothing**: (Requires scipy) Smooths path with splines
+- **Adaptive Smoothing**: Preserves sharp turns, smooths elsewhere
+- **Douglas-Peucker**: Simplifies path with minimal deviation
+
+Example usage:
+```python
+from amr_path_planner.path_smoothing import shortcut_smoothing, bezier_smoothing, smooth_path, analyze_path_smoothness
+
+smoothed = shortcut_smoothing(path, grid)
+bezier = bezier_smoothing(path, num_points=50)
+adaptive = smooth_path(path, grid, method='adaptive')
+
+# Analyze path smoothness
+smoothness_metrics = analyze_path_smoothness(path)
+print(smoothness_metrics)
+```
+
+### Enhanced Grid Movement Models
+
+- **4-connected**: Up, down, left, right
+- **8-connected**: Includes diagonals
+- **Custom patterns**: (e.g., knight moves)
+
+Example usage:
+```python
+from amr_path_planner.enhanced_grid import EnhancedGridMap, MovementType
+
+grid = EnhancedGridMap(20, 20, movement_model=MovementType.EIGHT_CONNECTED)
+# For custom moves:
+grid.movement_model = MovementType.CUSTOM
+# Example: knight moves
+grid.custom_moves = [(2, 1), (1, 2), (-1, 2), (-2, 1), (-2, -1), (-1, -2), (1, -2), (2, -1)]
+```
+
+## Running Demos & Benchmarks
+
+- **Demo:**
+  ```bash
+  cd examples
+  python demo.py
+  ```
+- **Benchmark:**
+  ```bash
+  cd examples
+  python performance_benchmark.py
+  ```
+
+## Troubleshooting & Best Practices
+
+- **Simulator Instantiation:** Always use keyword arguments (e.g., `Simulator(grid=..., agent=..., obstacle_mgr=...)`) to avoid argument misplacement errors.
+- **Advanced Algorithms:** Use the function-based interface (`rrt`, `rrt_star`, `prm`) as shown above.
+- **Missing Attributes:** If you see errors like `AttributeError: 'Simulator' object has no attribute 'running'`, ensure your code and package are up to date.
+- **Visualization Warnings:** Some matplotlib warnings may appear but do not affect simulation results.
+- **Import Errors:** Make sure to install the package in editable mode: `pip install -e .`
 
 ## API Reference
 

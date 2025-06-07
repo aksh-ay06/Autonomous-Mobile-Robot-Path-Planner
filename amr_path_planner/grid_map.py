@@ -3,7 +3,7 @@ GridMap module for autonomous mobile robot path planning.
 Provides a 2D grid representation with obstacle handling.
 """
 
-from typing import Set, Tuple, List
+from typing import Set, Tuple, List, Optional
 
 
 class GridMap:
@@ -16,7 +16,7 @@ class GridMap:
         static_obstacles (Set[Tuple[int, int]]): Set of obstacle coordinates
     """
     
-    def __init__(self, width: int, height: int, static_obstacles: Set[Tuple[int, int]] = None):
+    def __init__(self, width: int, height: int, static_obstacles: Optional[Set[Tuple[int, int]]] = None):
         """
         Initialize GridMap with dimensions and optional obstacles.
         
