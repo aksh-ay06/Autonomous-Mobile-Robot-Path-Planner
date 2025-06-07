@@ -77,7 +77,7 @@ def main():
         return
     
     # Create simulator
-    simulator = Simulator(grid, robot, obstacle_mgr, step_delay=0.2, max_steps=500)
+    simulator = Simulator(grid, agent=robot, obstacle_mgr=obstacle_mgr, step_delay=0.2, max_steps=500)
     print("Created simulator")
     
     print("\nStarting simulation...")
