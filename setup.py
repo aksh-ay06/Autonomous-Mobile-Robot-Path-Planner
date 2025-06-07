@@ -19,8 +19,8 @@ except FileNotFoundError:
 setup(
     name="amr-path-planner",
     version="1.0.0",
-    author="Your Name",
-    author_email="your.email@example.com",
+    author="Akshay Patel",
+    author_email="ap00143@mix.wvu.edu",
     description="Autonomous Mobile Robot Path Planner with dynamic obstacle avoidance",
     long_description=long_description,
     long_description_content_type="text/markdown",
