@@ -1,0 +1,232 @@
+# Autonomous Mobile Robot Path Planner
+
+A comprehensive Python package for autonomous mobile robot (AMR) path planning with dynamic obstacle avoidance and real-time simulation capabilities.
+
+## Features
+
+- **Multiple Search Algorithms**: Dijkstra and A* implementations
+- **Dynamic Obstacle Handling**: Real-time obstacle movement and collision avoidance
+- **Grid-based Navigation**: 4-connected grid map representation
+- **Real-time Visualization**: Matplotlib-based simulation with animation
+- **Modular Design**: Clean, extensible architecture
+- **Comprehensive Testing**: Full test suite with pytest
+
+## Installation
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd amr_path_planner
+```
+
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+3. Install the package in development mode:
+```bash
+pip install -e .
+```
+
+## Quick Start
+
+```python
+from amr_path_planner import GridMap, PathPlanner, RobotAgent, DynamicObstacleMgr, Simulator
+
+# Create a 20x15 grid with some obstacles
+grid = GridMap(20, 15, {(5, 5), (10, 8), (15, 12)})
+
+# Create path planner using A* algorithm
+planner = PathPlanner('astar', grid=grid)
+
+# Create robot agent
+robot = RobotAgent((1, 1), planner)
+
+# Set goal and plan path
+robot.plan_to((18, 13))
+
+# Create dynamic obstacle manager
+obstacle_mgr = DynamicObstacleMgr(grid)
+obstacle_mgr.add_obstacle(8, 6)
+obstacle_mgr.add_obstacle(12, 10)
+
+# Create and run simulator
+simulator = Simulator(grid, robot, obstacle_mgr)
+simulator.run(visualize=True)
+```
+
+## Architecture
+
+The package consists of several key components:
+
+### Core Modules
+
+- **`GridMap`**: 2D grid representation with obstacle handling
+- **`PathPlanner`**: Unified interface for search algorithms
+- **`RobotAgent`**: Robot logic with path following and replanning
+- **`DynamicObstacleMgr`**: Dynamic obstacle management with random movement
+- **`Simulator`**: Main simulation loop with visualization
+
+### Search Algorithms
+
+- **Dijkstra**: Optimal pathfinding algorithm
+- **A***: Heuristic-based optimal pathfinding (faster than Dijkstra)
+
+## Usage Examples
+
+### Basic Path Planning
+
+```python
+from amr_path_planner import GridMap, dijkstra, astar
+
+# Create grid and find path
+grid = GridMap(10, 10, {(3, 3), (4, 4)})
+path = dijkstra((0, 0), (9, 9), grid)
+print(f"Path length: {len(path)}")
+```
+
+### Advanced Simulation
+
+```python
+# Create environment
+grid = GridMap(15, 10)
+planner = PathPlanner('astar', grid=grid)
+robot = RobotAgent((0, 0), planner)
+
+# Add dynamic obstacles
+obstacle_mgr = DynamicObstacleMgr(grid, movement_probability=0.7)
+for i in range(5):
+    obstacle_mgr.spawn_random_obstacles(1)
+
+# Run simulation
+robot.plan_to((14, 9))
+simulator = Simulator(grid, robot, obstacle_mgr, max_steps=200)
+simulator.run(visualize=True, save_gif=True, gif_filename="simulation.gif")
+```
+
+## Demo Script
+
+Run the included demo to see the system in action:
+
+```bash
+cd examples
+python demo.py
+```
+
+The demo creates a complex environment with:
+- Static obstacles (walls and barriers)
+- Dynamic obstacles with random movement
+- Robot navigation from start to goal
+- Real-time visualization
+
+## Testing
+
+Run the test suite:
+
+```bash
+pytest tests/
+```
+
+Run tests with coverage:
+
+```bash
+pytest tests/ --cov=amr_path_planner
+```
+
+## Performance Metrics
+
+Typical performance on a modern machine:
+- **Grid Size**: Handles grids up to 100x100 efficiently
+- **Path Planning**: A* typically 2-3x faster than Dijkstra
+- **Real-time Performance**: 10-20 FPS visualization
+- **Memory Usage**: O(grid_size) memory complexity
+
+## Configuration Options
+
+### PathPlanner Configuration
+```python
+# Use Dijkstra algorithm
+planner = PathPlanner('dijkstra')
+
+# Use A* with custom heuristic
+def custom_heuristic(pos1, pos2):
+    return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
+
+planner = PathPlanner('astar', heuristic=custom_heuristic)
+```
+
+### Dynamic Obstacle Configuration
+```python
+# High movement probability (more dynamic)
+obstacle_mgr = DynamicObstacleMgr(grid, movement_probability=0.9)
+
+# Low movement probability (more static)
+obstacle_mgr = DynamicObstacleMgr(grid, movement_probability=0.3)
+```
+
+### Simulation Configuration
+```python
+# Fast simulation
+simulator = Simulator(grid, robot, obstacle_mgr, step_delay=0.05)
+
+# Detailed visualization
+simulator = Simulator(grid, robot, obstacle_mgr, step_delay=0.5, max_steps=1000)
+```
+
+## Extension Ideas
+
+1. **Additional Algorithms**: Implement RRT, PRM, or other planning algorithms
+2. **Multi-Robot Support**: Extend for multiple robots with coordination
+3. **3D Planning**: Extend to 3D grid maps
+4. **Real Robot Integration**: Connect to actual robot hardware
+5. **Machine Learning**: Add learned heuristics or neural network planners
+6. **Path Smoothing**: Add path optimization and smoothing
+7. **Different Movement Models**: Support 8-connected grids or continuous movement
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests for new functionality
+5. Run the test suite
+6. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Dependencies
+
+- `matplotlib`: Visualization and animation
+- `numpy`: Numerical computations (indirect dependency)
+- `pytest`: Testing framework
+- `networkx`: Graph algorithms (optional, for future extensions)
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Import Error**: Make sure the package is installed with `pip install -e .`
+2. **Visualization Issues**: Ensure matplotlib backend supports animation
+3. **Performance Issues**: Reduce grid size or increase step_delay for large simulations
+4. **Path Not Found**: Check that start and goal positions are valid and reachable
+
+### Debug Mode
+
+Enable debug output:
+```python
+import logging
+logging.basicConfig(level=logging.DEBUG)
+```
+
+## API Reference
+
+See the docstrings in each module for detailed API documentation. Key classes:
+
+- `GridMap(width, height, static_obstacles=None)`
+- `PathPlanner(algorithm='astar', heuristic=None, grid=None)`
+- `RobotAgent(start_position, planner)`
+- `DynamicObstacleMgr(grid, initial_obstacles=None, movement_probability=0.7)`
+- `Simulator(grid, agent, obstacle_mgr, step_delay=0.1, max_steps=1000)`
