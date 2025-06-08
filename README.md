@@ -262,3 +262,36 @@ See the docstrings in each module for detailed API documentation. Key classes:
 - `RobotAgent(start_position, planner)`
 - `DynamicObstacleMgr(grid, initial_obstacles=None, movement_probability=0.7)`
 - `Simulator(grid, agent, obstacle_mgr, step_delay=0.1, max_steps=1000)`
+
+## Advanced Algorithm Example
+
+![Advanced Algorithm](examples/advanced_algorithms_demo.png)
+
+_Example output of the advanced algorithm Demo._
+
+
+## Integrated Feature Demo
+
+![Integrated Feature Demo](examples/integrated_features_demo.png)
+
+_Example output for integrated feature Demo._
+
+
+## Movement Models Demo
+
+![Movement Models Demo](examples/movement_models_demo.png)
+
+_Example output for Movement Models Demo._
+
+## Path Smoothing Demo
+
+![Path Smoothing Demo](examples/path_smoothing_demo.png)
+
+_Example output for Path Smoothing Demo._
+
+
+## Performance Benchmark Example
+
+![Performance Benchmark](examples/performance_benchmark.png)
+
+_Example output of the performance benchmark script._
