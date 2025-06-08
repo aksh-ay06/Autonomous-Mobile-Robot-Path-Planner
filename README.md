@@ -295,3 +295,7 @@ _Example output for Path Smoothing Demo._
 ![Performance Benchmark](examples/performance_benchmark.png)
 
 _Example output of the performance benchmark script._
+
+## AMR Demo 1 Robot
+
+![AMR DEMO 1 Robot](examples/amr_demo.gif)

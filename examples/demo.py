@@ -126,7 +126,7 @@ def demo_with_gif():
     
     robot.plan_to((10, 6))
     
-    simulator = Simulator(grid, robot, obstacle_mgr, step_delay=0.3, max_steps=100)
+    simulator = Simulator(grid, agent=robot, obstacle_mgr=obstacle_mgr, step_delay=0.2, max_steps=500)
     
     print("Generating GIF animation...")
     simulator.run(visualize=True, save_gif=True, gif_filename="amr_demo.gif")
@@ -138,4 +138,4 @@ if __name__ == "__main__":
     main()
     
     # Uncomment the line below to also generate a GIF
-    # demo_with_gif()
+    demo_with_gif()
