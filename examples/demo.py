@@ -5,6 +5,7 @@ Demonstrates the autonomous mobile robot path planning system.
 
 import sys
 import os
+import random
 
 # Add the parent directory to the path so we can import the package
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -51,14 +52,21 @@ def main():
     planner = PathPlanner('astar', grid=grid)
     print("Created A* path planner")
     
-    # Create robot agent
-    start_pos = (1, 1)
-    robot = RobotAgent(start_pos, planner)
-    print(f"Created robot agent at position {start_pos}")
-    
-    # Create dynamic obstacle manager
+    # Choose a random free start position
+    all_cells = [(x, y) for x in range(grid.width) for y in range(grid.height)]
+    occupied = set(grid.static_obstacles)
     obstacle_mgr = DynamicObstacleMgr(grid, movement_probability=0.6)
-    
+    occupied.update(obstacle_mgr.get_obstacle_positions())
+    goal_pos = (18, 13)  # Make sure to define this before filtering
+
+    free_cells = [cell for cell in all_cells if cell not in occupied and cell != goal_pos]
+    if not free_cells:
+        raise RuntimeError("No free cells available for robot start position!")
+
+    start_pos = random.choice(free_cells)
+    robot = RobotAgent(start_pos, planner)
+    print(f"Created robot agent at random position {start_pos}")
+
     # Add some dynamic obstacles
     dynamic_positions = [(5, 3), (10, 6), (14, 10), (7, 12)]
     for pos in dynamic_positions:
@@ -66,7 +74,6 @@ def main():
     print(f"Added {len(dynamic_positions)} dynamic obstacles")
     
     # Set goal for robot
-    goal_pos = (18, 13)
     robot.plan_to(goal_pos)
     print(f"Robot planning path to goal {goal_pos}")
     
