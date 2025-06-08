@@ -43,7 +43,6 @@ Thumbs.db
 .tox/
 
 # Simulation outputs
-*.gif
 *.mp4
 simulation_*
 
