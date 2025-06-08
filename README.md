@@ -299,3 +299,5 @@ _Example output of the performance benchmark script._
 ## AMR Demo 1 Robot
 
 ![AMR DEMO 1 Robot](examples/amr_demo.gif)
+
+_Example output for 1 Robot_
