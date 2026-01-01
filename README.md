@@ -84,6 +84,28 @@ See the `examples/` directory:
 - `advanced_features_demo.py`: enhanced grid, smoothing, and sampling planners.
 - `performance_benchmark.py`: quick perf checks.
 - `demo_single_robot.py` at repo root: simple visualization entry point.
+- `multi_demo.py` at repo root: configurable multi-robot + dynamic obstacle demo. Example:
+    ```bash
+    python3 multi_demo.py \
+        --width 15 --height 15 \
+        --robots 5 \
+        --obstacles 50 \
+        --dynamic-obstacles 8 \
+        --dynamic-move-prob 0.7 \
+        --horizon 80 \
+        --mode cooperative \
+        --step-delay 0.05
+    ```
+    Flags:
+    - `--width/--height`: grid size
+    - `--obstacles`: static obstacle count
+    - `--dynamic-obstacles`: moving obstacles to spawn
+    - `--dynamic-move-prob`: move probability per step for dynamic obstacles
+    - `--robots`: number of robots; start/goal pairs are sampled randomly (seeded)
+    - `--horizon`: space-time planning horizon
+    - `--mode`: `priority`, `cooperative`, or `centralized`
+    - `--step-delay`: visualization delay (seconds)
+    - `--max-steps`: simulation cap
 
 ## Running tests
 Use the bundled virtual environment or your own:
