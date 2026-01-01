@@ -1,351 +1,346 @@
 """
-Enhanced grid map with support for different movement models.
-Supports 4-connected, 8-connected, and custom movement patterns.
+Enhanced grid map with support for different movement models and cell costs.
+
+Compatible with:
+- GridMap (dataclass) interface: in_bounds(), is_free(), add/remove obstacles
+- search_algorithms.py which currently uses neighbors4()
+
+Adds:
+- neighbors8()
+- neighbors_with_cost() for 4/8/custom move sets (supports terrain costs and diagonal costs)
+- movement patterns factory utilities
 """
 
-from typing import Set, Tuple, List, Dict
-import math
-from .grid_map import GridMap
+from __future__ import annotations
+
 import enum
+import math
+import random
+from dataclasses import dataclass, field
+from typing import Dict, Iterable, Optional, TypeAlias
+
+from .grid_map import GridMap
+
+Point: TypeAlias = tuple[int, int]
 
 
-class MovementType(enum.Enum):
+class MovementType(str, enum.Enum):
     FOUR_CONNECTED = "4-connected"
     EIGHT_CONNECTED = "8-connected"
-    KNIGHT = "knight"
-    # Add other movement types if needed
+    CUSTOM = "custom"
+    KNIGHT = "knight"  # convenience alias => custom pattern
 
 
+# Common movement deltas
+MOVES_4: tuple[Point, ...] = ((0, -1), (0, 1), (-1, 0), (1, 0))
+MOVES_8: tuple[Point, ...] = (
+    (-1, -1), (-1, 0), (-1, 1),
+    (0, -1),          (0, 1),
+    (1, -1),  (1, 0), (1, 1),
+)
+
+
+@dataclass
 class EnhancedGridMap(GridMap):
     """
-    Enhanced grid map supporting different movement models and cost functions.
-    
-    Attributes:
-        width (int): Grid width
-        height (int): Grid height
-        static_obstacles (Set[Tuple[int, int]]): Set of obstacle coordinates
-        movement_model (str): Movement model ('4-connected', '8-connected', 'custom')
-        custom_moves (List[Tuple[int, int]]): Custom movement directions
-        cost_map (Dict[Tuple[int, int], float]): Custom cost for each cell
+    GridMap with configurable movement model and terrain / cell costs.
+
+    - movement: controls which deltas are allowed
+    - custom_moves: deltas used when movement == CUSTOM (or pattern factories)
+    - cost_map: per-cell base cost multiplier (>= 0). Default 1.0.
+      Movement cost = base_cost(to_cell) * geometric_distance(from,to)
     """
-    
-    def __init__(self, width: int, height: int, 
-                 static_obstacles: Set[Tuple[int, int]] = None,
-                 movement_model: str = '4-connected',
-                 custom_moves: List[Tuple[int, int]] = None):
-        """
-        Initialize EnhancedGridMap with movement model.
-        
-        Args:
-            width: Grid width
-            height: Grid height
-            static_obstacles: Set of (x, y) coordinates representing obstacles
-            movement_model: Movement model ('4-connected', '8-connected', 'custom')
-            custom_moves: Custom movement directions for 'custom' model
-        """
-        super().__init__(width, height, static_obstacles)
-        self.movement_model = movement_model
-        self.custom_moves = custom_moves or []
-        self.cost_map: Dict[Tuple[int, int], float] = {}
-        
-        # Validate movement model
-        if movement_model not in ['4-connected', '8-connected', 'custom']:
-            raise ValueError("movement_model must be '4-connected', '8-connected', or 'custom'")
-        
-        if movement_model == 'custom' and not custom_moves:
-            raise ValueError("custom_moves must be provided for 'custom' movement model")
-    
-    def neighbors(self, x: int, y: int) -> List[Tuple[int, int]]:
-        """
-        Get valid neighboring cells based on movement model.
-        
-        Args:
-            x: X coordinate
-            y: Y coordinate
-            
-        Returns:
-            List[Tuple[int, int]]: List of valid neighbor coordinates
-        """
-        potential_neighbors = []
-        
-        if self.movement_model == '4-connected':
-            # Standard 4-connected movement: up, down, left, right
-            potential_neighbors = [
-                (x, y - 1),  # up
-                (x, y + 1),  # down
-                (x - 1, y),  # left
-                (x + 1, y)   # right
-            ]
-        
-        elif self.movement_model == '8-connected':
-            # 8-connected movement: includes diagonals
-            for dx in [-1, 0, 1]:
-                for dy in [-1, 0, 1]:
-                    if dx != 0 or dy != 0:  # Skip current position
-                        potential_neighbors.append((x + dx, y + dy))
-        
-        elif self.movement_model == 'custom':
-            # Custom movement patterns
-            for dx, dy in self.custom_moves:
-                potential_neighbors.append((x + dx, y + dy))
-        
-        # Filter to only free cells
-        return [(nx, ny) for nx, ny in potential_neighbors if self.is_free(nx, ny)]
-    
-    def neighbors_with_cost(self, x: int, y: int) -> List[Tuple[Tuple[int, int], float]]:
-        """
-        Get valid neighboring cells with movement costs.
-        
-        Args:
-            x: X coordinate
-            y: Y coordinate
-            
-        Returns:
-            List[Tuple[Tuple[int, int], float]]: List of (neighbor, cost) pairs
-        """
-        neighbors_list = []
-        
-        if self.movement_model == '4-connected':
-            # Standard 4-connected movement with unit cost
-            moves = [(0, -1), (0, 1), (-1, 0), (1, 0)]
-            for dx, dy in moves:
-                nx, ny = x + dx, y + dy
-                if self.is_free(nx, ny):
-                    cost = self.get_movement_cost((x, y), (nx, ny))
-                    neighbors_list.append(((nx, ny), cost))
-        
-        elif self.movement_model == '8-connected':
-            # 8-connected movement with diagonal costs
-            for dx in [-1, 0, 1]:
-                for dy in [-1, 0, 1]:
-                    if dx != 0 or dy != 0:  # Skip current position
-                        nx, ny = x + dx, y + dy
-                        if self.is_free(nx, ny):
-                            cost = self.get_movement_cost((x, y), (nx, ny))
-                            neighbors_list.append(((nx, ny), cost))
-        
-        elif self.movement_model == 'custom':
-            # Custom movement patterns with specified costs
-            for dx, dy in self.custom_moves:
-                nx, ny = x + dx, y + dy
-                if self.is_free(nx, ny):
-                    cost = self.get_movement_cost((x, y), (nx, ny))
-                    neighbors_list.append(((nx, ny), cost))
-        
-        return neighbors_list
-    
-    def get_movement_cost(self, from_pos: Tuple[int, int], to_pos: Tuple[int, int]) -> float:
-        """
-        Calculate the cost of moving from one position to another.
-        
-        Args:
-            from_pos: Starting position (x, y)
-            to_pos: Destination position (x, y)
-            
-        Returns:
-            float: Movement cost
-        """
-        # Check if custom cost is defined for destination
-        if to_pos in self.cost_map:
-            base_cost = self.cost_map[to_pos]
+    movement: MovementType = MovementType.FOUR_CONNECTED
+    movement_model: str | MovementType | None = None
+    custom_moves: tuple[Point, ...] = field(default_factory=tuple)
+    cost_map: Dict[Point, float] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # Normalize movement from either movement_model or movement
+        model_value = self.movement_model if self.movement_model is not None else self.movement
+
+        # Convert to canonical string then enum for internal use
+        if isinstance(model_value, MovementType):
+            model_str = model_value.value
         else:
-            base_cost = 1.0  # Default cost
-        
-        # Calculate distance-based cost multiplier
-        dx = abs(to_pos[0] - from_pos[0])
-        dy = abs(to_pos[1] - from_pos[1])
-        
-        if dx == 0 and dy == 0:
-            distance_multiplier = 0.0  # No movement
-        elif dx + dy == 1:
-            distance_multiplier = 1.0  # Orthogonal movement
-        elif dx == 1 and dy == 1:
-            distance_multiplier = math.sqrt(2)  # Diagonal movement
+            model_str = str(model_value)
+
+        try:
+            m_enum = MovementType(model_str)
+        except ValueError as exc:  # invalid model string
+            raise ValueError(f"Unknown movement model: {model_str}") from exc
+
+        # Handle knight as a convenience alias
+        if m_enum == MovementType.KNIGHT:
+            self.movement = MovementType.CUSTOM
+            self.movement_model = "knight"
+            if not self.custom_moves:
+                self.custom_moves = tuple(create_custom_movement_pattern("knight"))
+        elif m_enum == MovementType.CUSTOM:
+            self.movement = MovementType.CUSTOM
+            self.movement_model = "custom"
         else:
-            # Custom movement - use Euclidean distance
-            distance_multiplier = math.sqrt(dx**2 + dy**2)
-        
-        return base_cost * distance_multiplier
-    
-    def set_cell_cost(self, x: int, y: int, cost: float):
+            self.movement = m_enum
+            self.movement_model = m_enum.value
+
+        if self.movement == MovementType.CUSTOM and not self.custom_moves:
+            raise ValueError("custom_moves must be provided when movement model is CUSTOM.")
+
+        # Ensure costs are sane
+        for cell, c in list(self.cost_map.items()):
+            if c < 0:
+                raise ValueError(f"Cell cost must be non-negative. Got {c} for {cell}.")
+
+    # ----------------------------
+    # Neighbor APIs (compat + extended)
+    # ----------------------------
+
+    def neighbors4(self, x: int, y: int) -> list[Point]:
+        """4-connected neighbors (compatible with existing A*/Dijkstra)."""
+        return [(x + dx, y + dy) for dx, dy in MOVES_4 if self.is_free(x + dx, y + dy)]
+
+    def neighbors8(self, x: int, y: int) -> list[Point]:
+        """8-connected neighbors (includes diagonals)."""
+        return [(x + dx, y + dy) for dx, dy in MOVES_8 if self.is_free(x + dx, y + dy)]
+
+    def neighbors(self, x: int, y: int) -> list[Point]:
         """
-        Set custom cost for a specific cell.
-        
-        Args:
-            x: X coordinate
-            y: Y coordinate
-            cost: Movement cost for this cell
+        Movement-model neighbors:
+        - FOUR_CONNECTED -> 4 neighbors
+        - EIGHT_CONNECTED -> 8 neighbors
+        - CUSTOM -> custom_moves
         """
-        self.cost_map[(x, y)] = cost
-    
-    def set_terrain_costs(self, terrain_map: Dict[Tuple[int, int], float]):
+        moves = self._moves()
+        out: list[Point] = []
+        for dx, dy in moves:
+            nx, ny = x + dx, y + dy
+            if self.is_free(nx, ny):
+                out.append((nx, ny))
+        return out
+
+    def neighbors_with_cost(self, x: int, y: int) -> list[tuple[Point, float]]:
         """
-        Set terrain costs for multiple cells.
-        
-        Args:
-            terrain_map: Dictionary mapping (x, y) to cost values
+        Neighbors + movement costs based on:
+        cost = base_cost(to_cell) * euclidean_distance(move)
         """
-        self.cost_map.update(terrain_map)
-    
+        moves = self._moves()
+        out: list[tuple[Point, float]] = []
+        for dx, dy in moves:
+            nx, ny = x + dx, y + dy
+            if not self.is_free(nx, ny):
+                continue
+            cost = self.get_movement_cost((x, y), (nx, ny))
+            out.append(((nx, ny), cost))
+        return out
+
+    def _moves(self) -> tuple[Point, ...]:
+        model = self.movement_model if isinstance(self.movement_model, str) else self.movement_model.value
+
+        if model == MovementType.FOUR_CONNECTED.value:
+            return MOVES_4
+        if model == MovementType.EIGHT_CONNECTED.value:
+            return MOVES_8
+        if model == MovementType.KNIGHT.value:
+            return tuple(create_custom_movement_pattern("knight"))
+        if model == MovementType.CUSTOM.value:
+            if not self.custom_moves:
+                raise ValueError("custom_moves must be provided when movement model is CUSTOM.")
+            return tuple(self.custom_moves)
+        raise ValueError(f"Unknown movement model: {model}")
+
+    # ----------------------------
+    # Costs
+    # ----------------------------
+
     def get_cell_cost(self, x: int, y: int) -> float:
-        """Get the cost of a specific cell."""
-        return self.cost_map.get((x, y), 1.0)
-    
-    def create_terrain_pattern(self, pattern_type: str, **kwargs):
+        """Base terrain cost multiplier for entering cell (x,y)."""
+        return float(self.cost_map.get((x, y), 1.0))
+
+    def set_cell_cost(self, x: int, y: int, cost: float) -> None:
+        if cost < 0:
+            raise ValueError("Cell cost must be non-negative.")
+        if not self.in_bounds(x, y):
+            raise ValueError(f"Cell ({x},{y}) out of bounds.")
+        self.cost_map[(x, y)] = float(cost)
+
+    def set_terrain_costs(self, terrain_map: Dict[Point, float]) -> None:
+        for (x, y), c in terrain_map.items():
+            self.set_cell_cost(x, y, c)
+
+    def get_movement_cost(self, from_pos: Point, to_pos: Point) -> float:
         """
-        Create common terrain patterns with different costs.
-        
-        Args:
-            pattern_type: Type of pattern ('mud', 'hills', 'water', 'roads')
-            **kwargs: Pattern-specific parameters
+        Movement cost:
+          base_cost(to_pos) * euclidean_distance(delta)
         """
-        if pattern_type == 'mud':
-            # Create muddy areas with higher movement cost
-            mud_cost = kwargs.get('cost', 2.0)
-            density = kwargs.get('density', 0.1)
-            
-            import random
+        base = self.get_cell_cost(*to_pos)
+        dx = to_pos[0] - from_pos[0]
+        dy = to_pos[1] - from_pos[1]
+        dist = math.hypot(dx, dy)
+        return base * dist
+
+    # ----------------------------
+    # Terrain patterns
+    # ----------------------------
+
+    def create_terrain_pattern(self, pattern_type: str, **kwargs) -> None:
+        """
+        Create terrain patterns:
+          - mud: random high-cost cells
+          - hills: radial gradient
+          - water: rectangular regions high-cost
+          - roads: polyline roads low-cost (Bresenham)
+        """
+        pattern_type = pattern_type.lower().strip()
+
+        if pattern_type == "mud":
+            mud_cost = float(kwargs.get("cost", 2.0))
+            density = float(kwargs.get("density", 0.1))
+            seed = kwargs.get("seed", None)
+            rng = random.Random(seed)
             for x in range(self.width):
                 for y in range(self.height):
-                    if self.is_free(x, y) and random.random() < density:
+                    if self.is_free(x, y) and rng.random() < density:
                         self.set_cell_cost(x, y, mud_cost)
-        
-        elif pattern_type == 'hills':
-            # Create hilly terrain with gradient costs
-            center_x = kwargs.get('center_x', self.width // 2)
-            center_y = kwargs.get('center_y', self.height // 2)
-            max_cost = kwargs.get('max_cost', 3.0)
-            radius = kwargs.get('radius', min(self.width, self.height) // 4)
-            
+
+        elif pattern_type == "hills":
+            cx = int(kwargs.get("center_x", self.width // 2))
+            cy = int(kwargs.get("center_y", self.height // 2))
+            max_cost = float(kwargs.get("max_cost", 3.0))
+            radius = float(kwargs.get("radius", min(self.width, self.height) // 4))
+            radius = max(radius, 1.0)
+
             for x in range(self.width):
                 for y in range(self.height):
-                    if self.is_free(x, y):
-                        distance = math.sqrt((x - center_x)**2 + (y - center_y)**2)
-                        if distance <= radius:
-                            # Cost increases towards center (hill peak)
-                            cost = 1.0 + (max_cost - 1.0) * (1.0 - distance / radius)
-                            self.set_cell_cost(x, y, cost)
-        
-        elif pattern_type == 'water':
-            # Create water areas with very high cost (almost impassable)
-            water_cost = kwargs.get('cost', 10.0)
-            regions = kwargs.get('regions', [])
-            
-            for region in regions:
-                x_start, y_start, width, height = region
-                for x in range(x_start, min(x_start + width, self.width)):
-                    for y in range(y_start, min(y_start + height, self.height)):
+                    if not self.is_free(x, y):
+                        continue
+                    d = math.hypot(x - cx, y - cy)
+                    if d <= radius:
+                        # higher cost near center
+                        c = 1.0 + (max_cost - 1.0) * (1.0 - d / radius)
+                        self.set_cell_cost(x, y, c)
+
+        elif pattern_type == "water":
+            water_cost = float(kwargs.get("cost", 10.0))
+            regions = kwargs.get("regions", [])
+            # regions: list[(x_start, y_start, w, h)]
+            for x0, y0, w, h in regions:
+                for x in range(x0, min(x0 + w, self.width)):
+                    for y in range(y0, min(y0 + h, self.height)):
                         if self.is_free(x, y):
                             self.set_cell_cost(x, y, water_cost)
-        
-        elif pattern_type == 'roads':
-            # Create roads with lower movement cost
-            road_cost = kwargs.get('cost', 0.5)
-            roads = kwargs.get('roads', [])
-            
-            for road in roads:
-                start, end = road
-                # Simple line drawing for road
-                x1, y1 = start
-                x2, y2 = end
-                
-                # Bresenham's line algorithm (simplified)
-                dx = abs(x2 - x1)
-                dy = abs(y2 - y1)
-                x, y = x1, y1
-                
-                x_inc = 1 if x1 < x2 else -1
-                y_inc = 1 if y1 < y2 else -1
-                
-                error = dx - dy
-                
-                while True:
+
+        elif pattern_type == "roads":
+            road_cost = float(kwargs.get("cost", 0.5))
+            roads = kwargs.get("roads", [])
+            # roads: list[((x1,y1),(x2,y2)), ...]
+            for (x1, y1), (x2, y2) in roads:
+                for x, y in _bresenham_cells((x1, y1), (x2, y2)):
                     if self.is_free(x, y):
                         self.set_cell_cost(x, y, road_cost)
-                    
-                    if x == x2 and y == y2:
-                        break
-                    
-                    e2 = 2 * error
-                    if e2 > -dy:
-                        error -= dy
-                        x += x_inc
-                    if e2 < dx:
-                        error += dx
-                        y += y_inc
+
+        else:
+            raise ValueError(f"Unknown terrain pattern: {pattern_type}")
 
 
-def create_custom_movement_pattern(pattern_name: str) -> List[Tuple[int, int]]:
-    """
-    Create predefined custom movement patterns.
-    
-    Args:
-        pattern_name: Name of movement pattern
-        
-    Returns:
-        List of (dx, dy) movement offsets
-    """
-    if pattern_name == 'king':
-        # Chess king movement (8-connected)
-        return [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
-    
-    elif pattern_name == 'knight':
-        # Chess knight movement
+def _bresenham_cells(a: Point, b: Point) -> list[Point]:
+    """Bresenham line cells between integer points a and b."""
+    x0, y0 = a
+    x1, y1 = b
+    cells: list[Point] = []
+
+    dx = abs(x1 - x0)
+    dy = abs(y1 - y0)
+    sx = 1 if x0 < x1 else -1
+    sy = 1 if y0 < y1 else -1
+
+    x, y = x0, y0
+    if dx >= dy:
+        err = dx // 2
+        while x != x1:
+            cells.append((x, y))
+            err -= dy
+            if err < 0:
+                y += sy
+                err += dx
+            x += sx
+        cells.append((x1, y1))
+    else:
+        err = dy // 2
+        while y != y1:
+            cells.append((x, y))
+            err -= dx
+            if err < 0:
+                x += sx
+                err += dy
+            y += sy
+        cells.append((x1, y1))
+
+    return cells
+
+
+# ----------------------------
+# Movement pattern utilities
+# ----------------------------
+
+def create_custom_movement_pattern(pattern_name: str) -> list[Point]:
+    name = pattern_name.lower().strip()
+
+    if name == "king":
+        return list(MOVES_8)
+
+    if name == "knight":
         return [(-2, -1), (-2, 1), (-1, -2), (-1, 2), (1, -2), (1, 2), (2, -1), (2, 1)]
-    
-    elif pattern_name == 'plus':
-        # Plus-shaped movement (4-connected)
-        return [(0, -1), (0, 1), (-1, 0), (1, 0)]
-    
-    elif pattern_name == 'cross':
-        # Diagonal-only movement
+
+    if name == "plus":
+        return list(MOVES_4)
+
+    if name == "cross":
         return [(-1, -1), (-1, 1), (1, -1), (1, 1)]
-    
-    elif pattern_name == 'extended':
-        # Extended movement (up to 2 cells away)
-        moves = []
+
+    if name == "extended":
+        moves: list[Point] = []
         for dx in range(-2, 3):
             for dy in range(-2, 3):
-                if dx != 0 or dy != 0:  # Skip center
-                    moves.append((dx, dy))
+                if dx == 0 and dy == 0:
+                    continue
+                moves.append((dx, dy))
         return moves
-    
-    elif pattern_name == 'hex':
-        # Hexagonal grid movement (6-connected)
+
+    if name == "hex":
         return [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0)]
-    
-    else:
-        raise ValueError(f"Unknown movement pattern: {pattern_name}")
+
+    raise ValueError(f"Unknown movement pattern: {pattern_name}")
 
 
-# Example usage and factory function
-def create_enhanced_grid(width: int, height: int, 
-                        movement_type: str = '4-connected',
-                        obstacles: Set[Tuple[int, int]] = None,
-                        terrain_config: Dict = None) -> EnhancedGridMap:
+def create_enhanced_grid(
+    width: int,
+    height: int,
+    movement_type: str = "4-connected",
+    obstacles: Optional[set[Point]] = None,
+    terrain_config: Optional[Dict] = None,
+) -> EnhancedGridMap:
     """
-    Factory function to create enhanced grid maps with common configurations.
-    
-    Args:
-        width: Grid width
-        height: Grid height
-        movement_type: Movement model type
-        obstacles: Static obstacles
-        terrain_config: Terrain configuration parameters
-        
-    Returns:
-        Configured EnhancedGridMap instance
+    Factory:
+      - movement_type in {"4-connected","8-connected","custom", "king","knight","plus","cross","extended","hex"}
+      - terrain_config: { "mud": {...}, "roads": {...}, ... }
     """
-    # Handle predefined movement patterns
-    if movement_type in ['king', 'knight', 'plus', 'cross', 'extended', 'hex']:
-        custom_moves = create_custom_movement_pattern(movement_type)
-        grid = EnhancedGridMap(width, height, obstacles, 'custom', custom_moves)
+    obstacles = obstacles or set()
+    m = movement_type.lower().strip()
+
+    if m in {"king", "knight", "plus", "cross", "extended", "hex"}:
+        moves = tuple(create_custom_movement_pattern(m))
+        grid = EnhancedGridMap(width=width, height=height, static_obstacles=obstacles,
+                               movement=MovementType.CUSTOM, custom_moves=moves)
     else:
-        grid = EnhancedGridMap(width, height, obstacles, movement_type)
-    
-    # Apply terrain configuration if provided
+        # allow "4-connected" / "8-connected" / "custom"
+        movement = MovementType(m)
+        grid = EnhancedGridMap(width=width, height=height, static_obstacles=obstacles,
+                               movement=movement)
+
     if terrain_config:
-        for terrain_type, config in terrain_config.items():
-            grid.create_terrain_pattern(terrain_type, **config)
-    
+        for terrain_type, cfg in terrain_config.items():
+            grid.create_terrain_pattern(terrain_type, **cfg)
+
     return grid

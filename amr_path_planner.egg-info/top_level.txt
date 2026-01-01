@@ -1,2 +1,1 @@
 amr_path_planner
-tests

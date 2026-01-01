@@ -1,78 +1,46 @@
-"""
-GridMap module for autonomous mobile robot path planning.
-Provides a 2D grid representation with obstacle handling.
-"""
+from __future__ import annotations
 
-from typing import Set, Tuple, List, Optional
+from dataclasses import dataclass, field
+
+Point = tuple[int, int]
 
 
+@dataclass
 class GridMap:
-    """
-    A 2D grid map for robot navigation with static obstacles.
-    
-    Attributes:
-        width (int): Grid width
-        height (int): Grid height
-        static_obstacles (Set[Tuple[int, int]]): Set of obstacle coordinates
-    """
-    
-    def __init__(self, width: int, height: int, static_obstacles: Optional[Set[Tuple[int, int]]] = None):
-        """
-        Initialize GridMap with dimensions and optional obstacles.
-        
-        Args:
-            width: Grid width
-            height: Grid height  
-            static_obstacles: Set of (x, y) coordinates representing obstacles
-        """
-        self.width = width
-        self.height = height
-        self.static_obstacles = static_obstacles or set()
-    
+    """2D grid map with static obstacles. Coordinates are (x, y)."""
+    width: int
+    height: int
+    static_obstacles: set[Point] = field(default_factory=set)
+
+    def __post_init__(self) -> None:
+        if self.width <= 0 or self.height <= 0:
+            raise ValueError("width and height must be positive integers.")
+        # Avoid aliasing caller-owned set
+        self.static_obstacles = set(self.static_obstacles)
+
+        # Strict policy (recommended): fail fast if obstacles are invalid.
+        bad = [p for p in self.static_obstacles if not self.in_bounds(*p)]
+        if bad:
+            raise ValueError(f"Out-of-bounds obstacles: {bad}")
+
+    def in_bounds(self, x: int, y: int) -> bool:
+        return 0 <= x < self.width and 0 <= y < self.height
+
     def is_free(self, x: int, y: int) -> bool:
-        """
-        Check if a grid cell is free (not an obstacle and within bounds).
-        
-        Args:
-            x: X coordinate
-            y: Y coordinate
-            
-        Returns:
-            bool: True if cell is free, False otherwise
-        """
-        # Check bounds
-        if x < 0 or x >= self.width or y < 0 or y >= self.height:
-            return False
-        
-        # Check if obstacle
-        return (x, y) not in self.static_obstacles
-    
-    def neighbors(self, x: int, y: int) -> List[Tuple[int, int]]:
-        """
-        Get valid neighboring cells (4-connected grid).
-        
-        Args:
-            x: X coordinate
-            y: Y coordinate
-            
-        Returns:
-            List[Tuple[int, int]]: List of valid neighbor coordinates
-        """
-        # 4-connected neighbors: up, down, left, right
-        potential_neighbors = [
-            (x, y - 1),  # up
-            (x, y + 1),  # down
-            (x - 1, y),  # left
-            (x + 1, y)   # right
-        ]
-        
-        # Filter to only free cells
-        return [(nx, ny) for nx, ny in potential_neighbors if self.is_free(nx, ny)]
-    
-    def add_obstacle(self, x: int, y: int):
-        """Add an obstacle to the grid."""
+        return self.in_bounds(x, y) and (x, y) not in self.static_obstacles
+
+    def neighbors4(self, x: int, y: int) -> list[Point]:
+        candidates = ((x, y - 1), (x, y + 1), (x - 1, y), (x + 1, y))
+        return [(nx, ny) for nx, ny in candidates if self.is_free(nx, ny)]
+
+    def neighbors(self, x: int, y: int) -> list[Point]:
+        """Alias to 4-connected neighbors (compat with tests)."""
+        return self.neighbors4(x, y)
+
+    def add_obstacle(self, x: int, y: int) -> None:
+        if not self.in_bounds(x, y):
+            raise ValueError(f"Obstacle ({x},{y}) out of bounds.")
         self.static_obstacles.add((x, y))
-    
-    def remove_obstacle(self, x: int, y: int):
-        """Remove an obstacle from the grid."""
+
+    def remove_obstacle(self, x: int, y: int) -> None:
         self.static_obstacles.discard((x, y))

@@ -1,10 +1,12 @@
-matplotlib
-networkx
-pytest
-numpy
+matplotlib>=3.5.0
+networkx>=2.6.0
+pytest>=6.2.0
+numpy>=1.21.0
+scipy>=1.7.0
 
 [dev]
 pytest>=6.0
-pytest-cov>=2.0
-black>=21.0
-flake8>=3.8
+pytest-cov>=4.0
+black>=23.0
+flake8>=6.0
+isort>=5.0

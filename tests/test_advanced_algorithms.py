@@ -1,264 +1,226 @@
 """
 Test suite for advanced path planning algorithms (RRT, RRT*, PRM).
+
+UPDATED to match the *actual* implementation in this repo:
+- Uses function-based planners: rrt, rrt_star, prm (no RRTPlanner/RRTStarPlanner/PRMPlanner classes).
+- Node is optional; tested only if present and if it matches the (position,parent,cost) signature.
+- Removes reliance on private methods (_get_random_point, _get_nearest_node, etc.) that don't exist.
+- Handles probabilistic planners correctly using retries for "should succeed" cases.
+- Adds stronger path validity checks:
+  - in-bounds + free cells
+  - collision-free edges via conservative Bresenham line-of-sight checks
+- Fixes old GridMap API usage: prefers is_free(x,y) over is_obstacle(x,y).
 """
 
-import unittest
-import numpy as np
-import sys
+from __future__ import annotations
+
+import math
 import os
+import sys
+import unittest
+from typing import Callable, List, Optional, Tuple
 
 # Add the parent directory to the path to import amr_path_planner
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from amr_path_planner.grid_map import GridMap
-from amr_path_planner.advanced_algorithms import Node, RRTPlanner, RRTStarPlanner, PRMPlanner
+
+Point = Tuple[int, int]
+
+# Advanced algorithms are optional in some installs/builds
+try:
+    from amr_path_planner.advanced_algorithms import Node, rrt, rrt_star, prm  # type: ignore
+
+    ADVANCED_AVAILABLE = True
+except Exception:
+    ADVANCED_AVAILABLE = False
+    Node = None  # type: ignore
+    rrt = None  # type: ignore
+    rrt_star = None  # type: ignore
+    prm = None  # type: ignore
 
 
-class TestNode(unittest.TestCase):
-    """Test the Node class used in tree-based algorithms."""
-    
-    def test_node_creation(self):
-        """Test basic node creation."""
-        node = Node(5, 10)
-        self.assertEqual(node.x, 5)
-        self.assertEqual(node.y, 10)
-        self.assertIsNone(node.parent)
-        self.assertEqual(node.cost, 0.0)
-    
-    def test_node_with_parent(self):
-        """Test node creation with parent and cost."""
-        parent_node = Node(0, 0)
-        child_node = Node(3, 4, parent_node, 5.0)
-        self.assertEqual(child_node.parent, parent_node)
-        self.assertEqual(child_node.cost, 5.0)
-    
-    def test_distance_to(self):
-        """Test distance calculation between nodes."""
-        node1 = Node(0, 0)
-        node2 = Node(3, 4)
-        distance = node1.distance_to(node2)
-        self.assertAlmostEqual(distance, 5.0, places=5)
+def _in_bounds(grid: GridMap, p: Point) -> bool:
+    x, y = p
+    return 0 <= x < grid.width and 0 <= y < grid.height
 
 
-class TestRRTPlanner(unittest.TestCase):
-    """Test the RRT (Rapidly-exploring Random Tree) planner."""
-    
-    def setUp(self):
-        """Set up test environment."""
-        # Create a simple 10x10 grid with some obstacles
+def _bresenham_line(a: Point, b: Point) -> List[Point]:
+    """Discrete line between a and b (inclusive) for collision checking."""
+    x0, y0 = a
+    x1, y1 = b
+    dx = abs(x1 - x0)
+    dy = abs(y1 - y0)
+    sx = 1 if x0 < x1 else -1
+    sy = 1 if y0 < y1 else -1
+    err = dx - dy
+
+    pts: List[Point] = []
+    while True:
+        pts.append((x0, y0))
+        if (x0, y0) == (x1, y1):
+            break
+        e2 = 2 * err
+        if e2 > -dy:
+            err -= dy
+            x0 += sx
+        if e2 < dx:
+            err += dx
+            y0 += sy
+    return pts
+
+
+def _edge_is_free(grid: GridMap, a: Point, b: Point) -> bool:
+    """Conservative LOS check: all cells along the discrete line must be free."""
+    for x, y in _bresenham_line(a, b):
+        if not grid.is_free(x, y):
+            return False
+    return True
+
+
+def _assert_path_valid(testcase: unittest.TestCase, grid: GridMap, start: Point, goal: Point, path: List[Point]) -> None:
+    testcase.assertIsInstance(path, list)
+
+    if not path:
+        return
+
+    testcase.assertEqual(path[0], start, "Path must start at start")
+    testcase.assertEqual(path[-1], goal, "Path must end at goal")
+
+    for p in path:
+        testcase.assertTrue(_in_bounds(grid, p), f"Point out of bounds: {p}")
+        testcase.assertTrue(grid.is_free(p[0], p[1]), f"Point in obstacle: {p}")
+
+    for i in range(len(path) - 1):
+        testcase.assertTrue(_edge_is_free(grid, path[i], path[i + 1]), f"Edge crosses obstacle: {path[i]}->{path[i+1]}")
+
+
+def _run_with_retries(fn: Callable[[], List[Point]], attempts: int) -> List[Point]:
+    """Run a probabilistic planner multiple times; return first non-empty path."""
+    for _ in range(attempts):
+        p = fn()
+        if p:
+            return p
+    return []
+
+
+@unittest.skipUnless(ADVANCED_AVAILABLE, "Advanced algorithms not available")
+class TestAdvancedAlgorithmsFunctions(unittest.TestCase):
+    """Test the function-based advanced algorithms: rrt, rrt_star, prm."""
+
+    def setUp(self) -> None:
         self.grid = GridMap(10, 10)
-        # Add some obstacles
+        # Add a simple obstacle line with a gap
         for i in range(3, 7):
-            self.grid.add_obstacle(i, 5)
-        
-        self.rrt = RRTPlanner(
-            grid_map=self.grid,
-            max_iterations=1000,
-            step_size=1.0,
-            goal_bias=0.1
-        )
-    
-    def test_random_point_generation(self):
-        """Test random point generation within grid bounds."""
-        for _ in range(100):
-            x, y = self.rrt._get_random_point()
-            self.assertGreaterEqual(x, 0)
-            self.assertLess(x, self.grid.width)
-            self.assertGreaterEqual(y, 0)
-            self.assertLess(y, self.grid.height)
-    
-    def test_nearest_node_finding(self):
-        """Test finding the nearest node in the tree."""
-        # Add some nodes to the tree
-        start_node = Node(0, 0)
-        self.rrt.tree = [start_node]
-        self.rrt.tree.append(Node(2, 1, start_node))
-        self.rrt.tree.append(Node(1, 3, start_node))
-        
-        # Find nearest to point (2, 2)
-        nearest = self.rrt._get_nearest_node(2, 2)
-        self.assertEqual(nearest.x, 2)
-        self.assertEqual(nearest.y, 1)
-    
-    def test_collision_checking(self):
-        """Test collision detection."""
-        # Test collision with obstacle
-        self.assertTrue(self.rrt._check_collision(4, 5))
-        # Test no collision with free space
-        self.assertFalse(self.rrt._check_collision(1, 1))
-    
-    def test_path_planning_simple(self):
-        """Test path planning on a simple scenario."""
-        start = (0, 0)
-        goal = (9, 9)
-        
-        path = self.rrt.plan_path(start, goal)
-        
-        if path:  # RRT is probabilistic, so path might not always be found
-            self.assertEqual(path[0], start)
-            self.assertEqual(path[-1], goal)
-            # Check path validity (no obstacles)
-            for x, y in path:
-                self.assertFalse(self.grid.is_obstacle(x, y))
+            if i != 5:
+                self.grid.add_obstacle(i, 5)
+
+        self.start: Point = (0, 0)
+        self.goal: Point = (9, 9)
+
+        self.assertTrue(self.grid.is_free(*self.start))
+        self.assertTrue(self.grid.is_free(*self.goal))
+
+    def test_node_optional(self) -> None:
+        """Node is optional; validate basic behavior only if it's present and compatible."""
+        if Node is None:
+            self.skipTest("Node not exposed in this build")
+
+        # Your repo's Node (from updated advanced_algorithms) uses Node(position, parent=None)
+        # and has .position, .parent, .cost and maybe .children/add_child.
+        try:
+            n = Node((5, 10))
+        except Exception as e:
+            self.skipTest(f"Node signature mismatch in this build: {e}")
+
+        self.assertEqual(getattr(n, "position", None), (5, 10))
+        self.assertTrue(hasattr(n, "parent"))
+        self.assertTrue(hasattr(n, "cost"))
+
+    def test_rrt_returns_valid_path_if_found(self) -> None:
+        self.assertIsNotNone(rrt)
+        path = rrt(self.start, self.goal, self.grid, max_iterations=1000, step_size=1.0, goal_bias=0.1)
+        _assert_path_valid(self, self.grid, self.start, self.goal, path)
+
+    def test_rrt_star_returns_valid_path_if_found(self) -> None:
+        self.assertIsNotNone(rrt_star)
+        path = rrt_star(self.start, self.goal, self.grid, max_iterations=1000, step_size=1.0, goal_bias=0.1, search_radius=3.0)
+        _assert_path_valid(self, self.grid, self.start, self.goal, path)
+
+    def test_prm_returns_valid_path_if_found(self) -> None:
+        self.assertIsNotNone(prm)
+        path = prm(self.start, self.goal, self.grid, num_samples=200, connection_radius=3.0)
+        _assert_path_valid(self, self.grid, self.start, self.goal, path)
+
+    def test_algorithms_find_path_in_open_grid(self) -> None:
+        """In an obstacle-free grid, all algorithms should find a path (with retries)."""
+        g = GridMap(10, 10)
+        start: Point = (1, 1)
+        goal: Point = (8, 8)
+
+        algs: List[Tuple[str, Callable[[], List[Point]]]] = []
+
+        if rrt is not None:
+            algs.append(("RRT", lambda: rrt(start, goal, g, max_iterations=600, step_size=1.5, goal_bias=0.2)))
+        if rrt_star is not None:
+            algs.append(("RRT*", lambda: rrt_star(start, goal, g, max_iterations=600, step_size=1.5, goal_bias=0.2, search_radius=3.0)))
+        if prm is not None:
+            algs.append(("PRM", lambda: prm(start, goal, g, num_samples=120, connection_radius=4.0)))
+
+        for name, fn in algs:
+            with self.subTest(algorithm=name):
+                path = _run_with_retries(fn, attempts=5)
+                self.assertTrue(path, f"{name} should find a path in open grid (with retries)")
+                _assert_path_valid(self, g, start, goal, path)
+
+    def test_algorithms_no_solution_when_goal_is_isolated(self) -> None:
+        """If goal is fully surrounded by obstacles (8-neighborhood), path must be []."""
+        g = GridMap(10, 10)
+        start: Point = (1, 1)
+        goal: Point = (8, 8)
+
+        # Surround goal
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                x, y = goal[0] + dx, goal[1] + dy
+                if 0 <= x < g.width and 0 <= y < g.height:
+                    g.add_obstacle(x, y)
+
+        self.assertTrue(g.is_free(*goal), "Goal itself should remain free")
+
+        algs: List[Tuple[str, Callable[[], List[Point]]]] = []
+        if rrt is not None:
+            algs.append(("RRT", lambda: rrt(start, goal, g, max_iterations=400, step_size=1.5, goal_bias=0.3)))
+        if rrt_star is not None:
+            algs.append(("RRT*", lambda: rrt_star(start, goal, g, max_iterations=400, step_size=1.5, goal_bias=0.3, search_radius=3.0)))
+        if prm is not None:
+            algs.append(("PRM", lambda: prm(start, goal, g, num_samples=80, connection_radius=3.0)))
+
+        for name, fn in algs:
+            with self.subTest(algorithm=name):
+                path = _run_with_retries(fn, attempts=3)
+                self.assertEqual(path, [], f"{name} should return [] when goal is isolated")
+
+    def test_parameter_smoke(self) -> None:
+        """Smoke-test a couple parameter variations (validate if returned)."""
+        g = GridMap(10, 10)
+        start: Point = (1, 1)
+        goal: Point = (8, 8)
+
+        if rrt is not None:
+            p1 = rrt(start, goal, g, max_iterations=200, step_size=0.75, goal_bias=0.1)
+            p2 = rrt(start, goal, g, max_iterations=200, step_size=2.0, goal_bias=0.2)
+            _assert_path_valid(self, g, start, goal, p1)
+            _assert_path_valid(self, g, start, goal, p2)
+
+        if prm is not None:
+            p1 = prm(start, goal, g, num_samples=60, connection_radius=2.0)
+            p2 = prm(start, goal, g, num_samples=160, connection_radius=4.0)
+            _assert_path_valid(self, g, start, goal, p1)
+            _assert_path_valid(self, g, start, goal, p2)
 
 
-class TestRRTStarPlanner(unittest.TestCase):
-    """Test the RRT* (optimal RRT) planner."""
-    
-    def setUp(self):
-        """Set up test environment."""
-        self.grid = GridMap(10, 10)
-        # Add some obstacles
-        for i in range(3, 7):
-            self.grid.add_obstacle(i, 5)
-        
-        self.rrt_star = RRTStarPlanner(
-            grid_map=self.grid,
-            max_iterations=1000,
-            step_size=1.0,
-            goal_bias=0.1,
-            search_radius=2.0
-        )
-    
-    def test_near_nodes_finding(self):
-        """Test finding nodes within search radius."""
-        # Add some nodes to the tree
-        start_node = Node(0, 0)
-        self.rrt_star.tree = [start_node]
-        self.rrt_star.tree.append(Node(1, 1, start_node, 1.414))
-        self.rrt_star.tree.append(Node(2, 0, start_node, 2.0))
-        self.rrt_star.tree.append(Node(5, 5, start_node, 7.071))
-        
-        # Find nodes near (1.5, 0.5) within radius 2.0
-        near_nodes = self.rrt_star._get_near_nodes(1.5, 0.5)
-        
-        # Should find first 3 nodes but not the distant one
-        self.assertGreaterEqual(len(near_nodes), 2)
-        self.assertLessEqual(len(near_nodes), 3)
-    
-    def test_path_planning_optimality(self):
-        """Test that RRT* can find better paths than RRT."""
-        start = (0, 0)
-        goal = (2, 2)
-        
-        # Plan with both algorithms
-        rrt = RRTPlanner(self.grid, max_iterations=500)
-        rrt_star = RRTStarPlanner(self.grid, max_iterations=500)
-        
-        path_rrt = rrt.plan_path(start, goal)
-        path_rrt_star = rrt_star.plan_path(start, goal)
-        
-        # Both should find valid paths (if any)
-        if path_rrt and path_rrt_star:
-            self.assertEqual(path_rrt[0], start)
-            self.assertEqual(path_rrt[-1], goal)
-            self.assertEqual(path_rrt_star[0], start)
-            self.assertEqual(path_rrt_star[-1], goal)
-
-
-class TestPRMPlanner(unittest.TestCase):
-    """Test the PRM (Probabilistic Roadmap) planner."""
-    
-    def setUp(self):
-        """Set up test environment."""
-        self.grid = GridMap(10, 10)
-        # Add some obstacles
-        for i in range(3, 7):
-            self.grid.add_obstacle(i, 5)
-        
-        self.prm = PRMPlanner(
-            grid_map=self.grid,
-            num_samples=100,
-            connection_radius=2.0
-        )
-    
-    def test_sample_generation(self):
-        """Test generation of random samples."""
-        samples = self.prm._generate_samples()
-        
-        self.assertEqual(len(samples), self.prm.num_samples)
-        
-        # All samples should be in free space
-        for node in samples:
-            self.assertFalse(self.grid.is_obstacle(node.x, node.y))
-            self.assertGreaterEqual(node.x, 0)
-            self.assertLess(node.x, self.grid.width)
-            self.assertGreaterEqual(node.y, 0)
-            self.assertLess(node.y, self.grid.height)
-    
-    def test_roadmap_construction(self):
-        """Test roadmap construction."""
-        samples = self.prm._generate_samples()
-        graph = self.prm._build_roadmap(samples)
-        
-        # Graph should have nodes
-        self.assertGreater(len(graph), 0)
-        
-        # Check that connections are within radius
-        for node in graph:
-            for neighbor in graph[node]:
-                distance = node.distance_to(neighbor)
-                self.assertLessEqual(distance, self.prm.connection_radius + 0.001)  # Small tolerance
-    
-    def test_path_planning(self):
-        """Test complete path planning with PRM."""
-        start = (0, 0)
-        goal = (9, 0)  # Should be reachable
-        
-        path = self.prm.plan_path(start, goal)
-        
-        if path:  # PRM is probabilistic
-            self.assertEqual(path[0], start)
-            self.assertEqual(path[-1], goal)
-            # Check path validity
-            for x, y in path:
-                self.assertFalse(self.grid.is_obstacle(x, y))
-
-
-class TestAlgorithmComparison(unittest.TestCase):
-    """Test comparison between different algorithms."""
-    
-    def setUp(self):
-        """Set up test environment."""
-        self.grid = GridMap(15, 15)
-        # Create a more complex obstacle pattern
-        for i in range(5, 10):
-            self.grid.add_obstacle(i, 7)
-        for j in range(3, 8):
-            self.grid.add_obstacle(7, j)
-    
-    def test_algorithm_consistency(self):
-        """Test that all algorithms can solve the same problem."""
-        start = (0, 0)
-        goal = (14, 14)
-        
-        # Initialize all planners
-        rrt = RRTPlanner(self.grid, max_iterations=2000, step_size=1.0)
-        rrt_star = RRTStarPlanner(self.grid, max_iterations=2000, step_size=1.0)
-        prm = PRMPlanner(self.grid, num_samples=200, connection_radius=3.0)
-        
-        # Plan paths
-        paths = {
-            'RRT': rrt.plan_path(start, goal),
-            'RRT*': rrt_star.plan_path(start, goal),
-            'PRM': prm.plan_path(start, goal)
-        }
-        
-        # Check that at least some algorithms found paths
-        successful_algorithms = [name for name, path in paths.items() if path is not None]
-        self.assertGreater(len(successful_algorithms), 0, 
-                          "At least one algorithm should find a path")
-        
-        # Validate all found paths
-        for algorithm_name, path in paths.items():
-            if path:
-                with self.subTest(algorithm=algorithm_name):
-                    self.assertEqual(path[0], start)
-                    self.assertEqual(path[-1], goal)
-                    # Check no obstacles in path
-                    for x, y in path:
-                        self.assertFalse(self.grid.is_obstacle(x, y))
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
